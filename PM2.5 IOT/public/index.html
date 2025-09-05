@@ -19,10 +19,16 @@
         class="px-4 py-2 bg-green-500 text-white rounded w-full">Start Monitoring</button>
     </div>
 
-    <!-- Runtime -->
-    <div class="bg-white rounded-2xl shadow-md px-6 py-3 text-center hidden" id="runtimeBox">
-      <h2 class="text-lg font-semibold text-gray-700">Runtime</h2>
-      <p id="runtime" class="text-2xl font-bold text-blue-600">00:00:00</p>
+    <!-- Runtime + Status -->
+    <div class="bg-white rounded-2xl shadow-md px-6 py-3 text-center hidden flex items-center justify-center gap-4" id="runtimeBox">
+      <div>
+        <h2 class="text-lg font-semibold text-gray-700">Runtime</h2>
+        <p id="runtime" class="text-2xl font-bold text-blue-600">00:00:00</p>
+      </div>
+      <div>
+        <h2 class="text-lg font-semibold text-gray-700">Status</h2>
+        <p id="status" class="text-2xl font-bold text-gray-600">--</p>
+      </div>
     </div>
 
     <!-- Current Values -->
@@ -65,6 +71,7 @@
       const pm25El = document.getElementById("pm25-value");
       const pm10El = document.getElementById("pm10-value");
       const runtimeEl = document.getElementById("runtime");
+      const statusEl = document.getElementById("status");
 
       const ctx = document.getElementById("pmChart").getContext("2d");
       const pmChart = new Chart(ctx, {
@@ -98,7 +105,6 @@
           return;
         }
 
-        // Show hidden UI
         document.getElementById("runtimeBox").classList.remove("hidden");
         document.getElementById("valuesBox").classList.remove("hidden");
         document.getElementById("rangeBox").classList.remove("hidden");
@@ -106,22 +112,21 @@
 
         allData = [];
         startTime = new Date();
+        statusEl.textContent = "Connecting...";
+        statusEl.style.color = "gray";
+
         if (fetchInterval) clearInterval(fetchInterval);
         if (runtimeInterval) clearInterval(runtimeInterval);
 
         fetchData();
-        fetchInterval = setInterval(fetchData, 2000); // fetch every 2 seconds
-        runtimeInterval = setInterval(updateRuntime, 1000); // fetch the run-time every 1 seconds
+        fetchInterval = setInterval(fetchData, 5000);
+        runtimeInterval = setInterval(updateRuntime, 1000);
       }
 
       async function fetchData() {
         try {
-          const res25 = await fetch(
-            `https://blynk.cloud/external/api/get?token=${BLYNK_TOKEN}&V1`
-          );
-          const res10 = await fetch(
-            `https://blynk.cloud/external/api/get?token=${BLYNK_TOKEN}&V2`
-          );
+          const res25 = await fetch(`https://blynk.cloud/external/api/get?token=${BLYNK_TOKEN}&V1`);
+          const res10 = await fetch(`https://blynk.cloud/external/api/get?token=${BLYNK_TOKEN}&V2`);
           const val25 = await res25.text();
           const val10 = await res10.text();
 
@@ -134,8 +139,14 @@
 
           allData.push({ time: now, pm25: p25, pm10: p10 });
           updateChart();
+
+          // Online status
+          statusEl.textContent = "Online";
+          statusEl.style.color = "green";
         } catch (err) {
           console.error("Fetch error:", err);
+          statusEl.textContent = "Offline";
+          statusEl.style.color = "red";
         }
       }
 
