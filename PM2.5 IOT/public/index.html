@@ -10,14 +10,23 @@
   <body class="min-h-screen bg-gradient-to-br from-blue-100 to-blue-300 p-6 flex flex-col items-center gap-6">
     <h1 class="text-3xl font-bold text-blue-800">🌿 PM IoT Dashboard</h1>
 
+    <!-- Settings -->
+    <div class="bg-white rounded-2xl shadow-md px-6 py-4 text-center w-full max-w-lg">
+      <h2 class="text-lg font-semibold text-gray-700 mb-2">Settings</h2>
+      <input id="tokenInput" type="text" placeholder="Enter Blynk Token"
+        class="w-full border p-2 rounded mb-3" />
+      <button onclick="startMonitoring()"
+        class="px-4 py-2 bg-green-500 text-white rounded w-full">Start Monitoring</button>
+    </div>
+
     <!-- Runtime -->
-    <div class="bg-white rounded-2xl shadow-md px-6 py-3 text-center">
+    <div class="bg-white rounded-2xl shadow-md px-6 py-3 text-center hidden" id="runtimeBox">
       <h2 class="text-lg font-semibold text-gray-700">Runtime</h2>
       <p id="runtime" class="text-2xl font-bold text-blue-600">00:00:00</p>
     </div>
 
     <!-- Current Values -->
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-4xl">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-4xl hidden" id="valuesBox">
       <div class="bg-white rounded-2xl shadow-lg p-6 text-center">
         <h2 class="text-xl font-semibold text-gray-700">PM2.5</h2>
         <p id="pm25-value" class="text-4xl font-bold text-red-500">--</p>
@@ -32,7 +41,7 @@
     </div>
 
     <!-- Range Selector -->
-    <div class="flex gap-2 mb-4">
+    <div class="flex gap-2 mb-4 hidden" id="rangeBox">
       <button onclick="setRange('1h')" class="px-4 py-2 bg-blue-500 text-white rounded">1 Hour</button>
       <button onclick="setRange('1d')" class="px-4 py-2 bg-blue-500 text-white rounded">1 Day</button>
       <button onclick="setRange('10d')" class="px-4 py-2 bg-blue-500 text-white rounded">10 Days</button>
@@ -40,24 +49,23 @@
     </div>
 
     <!-- Chart -->
-    <div class="bg-white rounded-2xl shadow-lg p-6 w-full max-w-4xl">
+    <div class="bg-white rounded-2xl shadow-lg p-6 w-full max-w-4xl hidden" id="chartBox">
       <h2 class="text-lg font-semibold text-gray-700 mb-4">Historical Data</h2>
       <canvas id="pmChart" height="120"></canvas>
     </div>
 
     <script>
-      // ✅ Fixed Blynk Token
-      const BLYNK_TOKEN = "aayvLpSghbn9aiK1us1mvQqAlIFOn9FS";
+      let BLYNK_TOKEN = "";
+      let allData = [];
+      let selectedRange = "1h";
+      let startTime = null;
+      let fetchInterval = null;
+      let runtimeInterval = null;
 
       const pm25El = document.getElementById("pm25-value");
       const pm10El = document.getElementById("pm10-value");
       const runtimeEl = document.getElementById("runtime");
 
-      let allData = []; // keep all readings with timestamp
-      let selectedRange = "1h"; // default
-      let startTime = new Date(); // runtime start
-
-      // Chart.js setup
       const ctx = document.getElementById("pmChart").getContext("2d");
       const pmChart = new Chart(ctx, {
         type: "line",
@@ -80,13 +88,31 @@
             },
           ],
         },
-        options: {
-          responsive: true,
-          scales: {
-            y: { beginAtZero: true },
-          },
-        },
+        options: { responsive: true, scales: { y: { beginAtZero: true } } },
       });
+
+      function startMonitoring() {
+        BLYNK_TOKEN = document.getElementById("tokenInput").value.trim();
+        if (!BLYNK_TOKEN) {
+          alert("Please enter a Blynk Token");
+          return;
+        }
+
+        // Show hidden UI
+        document.getElementById("runtimeBox").classList.remove("hidden");
+        document.getElementById("valuesBox").classList.remove("hidden");
+        document.getElementById("rangeBox").classList.remove("hidden");
+        document.getElementById("chartBox").classList.remove("hidden");
+
+        allData = [];
+        startTime = new Date();
+        if (fetchInterval) clearInterval(fetchInterval);
+        if (runtimeInterval) clearInterval(runtimeInterval);
+
+        fetchData();
+        fetchInterval = setInterval(fetchData, 2000); // fetch every 2 seconds
+        runtimeInterval = setInterval(updateRuntime, 1000); // fetch the run-time every 1 seconds
+      }
 
       async function fetchData() {
         try {
@@ -103,13 +129,10 @@
           const p10 = Number(val10);
           const now = new Date();
 
-          // show current values
           pm25El.textContent = isNaN(p25) ? "--" : p25;
           pm10El.textContent = isNaN(p10) ? "--" : p10;
 
-          // push to history
           allData.push({ time: now, pm25: p25, pm10: p10 });
-
           updateChart();
         } catch (err) {
           console.error("Fetch error:", err);
@@ -124,38 +147,28 @@
       function updateChart() {
         const now = new Date();
         let cutoff;
-
         if (selectedRange === "1h") cutoff = new Date(now - 60 * 60 * 1000);
         if (selectedRange === "1d") cutoff = new Date(now - 24 * 60 * 60 * 1000);
         if (selectedRange === "10d") cutoff = new Date(now - 10 * 24 * 60 * 60 * 1000);
         if (selectedRange === "1y") cutoff = new Date(now - 365 * 24 * 60 * 60 * 1000);
 
         const filtered = allData.filter((d) => d.time >= cutoff);
-
         pmChart.data.labels = filtered.map((d) =>
           selectedRange === "1h" ? d.time.toLocaleTimeString() : d.time.toLocaleDateString()
         );
         pmChart.data.datasets[0].data = filtered.map((d) => d.pm25);
         pmChart.data.datasets[1].data = filtered.map((d) => d.pm10);
-
         pmChart.update();
       }
 
       function updateRuntime() {
         const now = new Date();
-        const diff = Math.floor((now - startTime) / 1000); // seconds
-
+        const diff = Math.floor((now - startTime) / 1000);
         const hrs = String(Math.floor(diff / 3600)).padStart(2, "0");
         const mins = String(Math.floor((diff % 3600) / 60)).padStart(2, "0");
         const secs = String(diff % 60).padStart(2, "0");
-
         runtimeEl.textContent = `${hrs}:${mins}:${secs}`;
       }
-
-      // fetch every 5s
-      fetchData();
-      setInterval(fetchData, 5000);
-      setInterval(updateRuntime, 1000);
     </script>
   </body>
 </html>
